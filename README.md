@@ -1,15 +1,24 @@
-# RealEBStarter - Registry Hook DLL
+# RealEBStarter - Registry and COM Hook DLL
 
-A DLL injection tool using Microsoft Detours to hook Windows Registry API calls and provide a virtual registry from a .reg file.
+A DLL injection tool using Microsoft Detours to hook Windows Registry API calls and COM object creation, providing virtual registry and COM server redirection.
 
 ## Features
 
+### Registry Hooking
 - Hooks registry read/write operations (RegOpenKeyEx, RegQueryValueEx, RegSetValueEx, RegCreateKeyEx, RegDeleteValue)
 - Supports both ANSI and Unicode variants of registry APIs
 - Virtual registry configuration using standard Windows .reg files exported from regedit.exe
 - Returns registry data directly from .reg file without touching real registry
 - Read-only virtual registry (write operations return ERROR_ACCESS_DENIED)
 - Supports all registry value types (REG_SZ, REG_DWORD, REG_BINARY, REG_MULTI_SZ, REG_EXPAND_SZ, etc.)
+
+### COM Hooking
+- Hooks COM object creation (CoCreateInstance, CoCreateInstanceEx, CoGetClassObject)
+- Redirects COM CLSIDs to custom DLL implementations
+- Loads COM servers from file without registry registration
+- Supports relative and absolute DLL paths
+- Enables testing with mock COM objects
+- Allows side-by-side COM implementations
 
 ## Prerequisites
 
@@ -35,6 +44,12 @@ A DLL injection tool using Microsoft Detours to hook Windows Registry API calls 
 4. Build the solution (Release or Debug)
 
 ## Configuration
+
+The DLL uses two configuration files that must be placed in the same directory as the DLL:
+1. `registry_config.reg` - Virtual registry configuration
+2. `com_config.ini` - COM server redirection configuration
+
+### Registry Configuration
 
 Create a `registry_config.reg` file next to the DLL using standard Windows Registry Editor format.
 
@@ -80,6 +95,37 @@ Windows Registry Editor Version 5.00
 - The virtual registry is **READ-ONLY**
 - Keys not in the .reg file pass through to real registry
 
+### COM Configuration
+
+Create a `com_config.ini` file next to the DLL with CLSID to DLL mappings.
+
+**Format:**
+```ini
+# Enable/disable COM hooking
+enabled=true
+
+# Format: CLSID=DLL_PATH
+{12345678-1234-1234-1234-123456789ABC}=TestComServer.dll
+{87654321-4321-4321-4321-CBA987654321}=ComServers\AlternateImpl.dll
+{ABCDEF00-1111-2222-3333-444455556666}=C:\MyApp\Debug\DebugComServer.dll
+```
+
+**How to find CLSIDs:**
+1. Use a COM browser tool (OleView.exe)
+2. Check application documentation
+3. Use Process Monitor to capture COM creation calls
+4. Search registry for "CLSID" keys
+
+**DLL Path Options:**
+- Relative to config file: `MyComServer.dll`
+- Relative subdirectory: `ComServers\MyComServer.dll`
+- Absolute path: `C:\Full\Path\To\MyComServer.dll`
+
+**COM DLL Requirements:**
+- Must export `DllGetClassObject` function
+- Must implement `IClassFactory` interface
+- Must support the requested interfaces
+
 ## Usage
 
 ### Method 1: DLL Injection
@@ -117,7 +163,9 @@ LoadAppInit_DLLs = 1
 1. **DLL_PROCESS_ATTACH**: 
    - Loads `registry_config.reg` from the DLL directory
    - Parses all registry keys and values into memory
-   - Installs Detours hooks on registry API functions
+   - Loads `com_config.ini` from the DLL directory
+   - Parses CLSID to DLL path mappings
+   - Installs Detours hooks on registry and COM API functions
 
 2. **Registry API Calls**:
    - **RegOpenKeyEx**: If key is in virtual registry, returns fake handle
@@ -127,16 +175,31 @@ LoadAppInit_DLLs = 1
    - **RegDeleteValue**: If key is in virtual registry, returns ERROR_ACCESS_DENIED (read-only)
    - Keys NOT in virtual registry pass through to real Windows registry
 
-3. **DLL_PROCESS_DETACH**:
+3. **COM API Calls**:
+   - **CoCreateInstance**: If CLSID is in config, loads custom DLL and creates object
+   - **CoCreateInstanceEx**: If CLSID is in config, loads custom DLL and queries multiple interfaces
+   - **CoGetClassObject**: If CLSID is in config, loads custom DLL and returns class factory
+   - Calls `DllGetClassObject` on the configured DLL
+   - Creates instance using `IClassFactory::CreateInstance`
+   - CLSIDs NOT in config pass through to real COM system
+
+4. **DLL_PROCESS_DETACH**:
    - Removes all hooks cleanly
+   - Unloads COM server DLLs
 
 ## Hooked APIs
 
+### Registry APIs
 - RegOpenKeyExA/W
 - RegQueryValueExA/W
 - RegSetValueExA/W
 - RegCreateKeyExA/W
 - RegDeleteValueA/W
+
+### COM APIs
+- CoCreateInstance
+- CoCreateInstanceEx
+- CoGetClassObject
 
 ## Architecture
 
@@ -144,8 +207,11 @@ LoadAppInit_DLLs = 1
 
 - `dllmain.cpp` - DLL entry point, initializes hooking
 - `RegistryConfig.h/cpp` - .reg file parser and virtual registry storage
-- `RegistryHooks.h/cpp` - Detours hook implementations
+- `RegistryHooks.h/cpp` - Registry API hook implementations
+- `COMConfig.h/cpp` - COM configuration parser and DLL manager
+- `COMHooks.h/cpp` - COM API hook implementations
 - `registry_config.reg` - Virtual registry configuration (user-editable)
+- `com_config.ini` - COM redirection configuration (user-editable)
 
 ### Key Components
 
@@ -156,12 +222,26 @@ LoadAppInit_DLLs = 1
    - Thread-safe access
    - Supports all registry value types
 
-2. **RegistryHooks**: Detours hook functions
+2. **RegistryHooks**: Detours hook functions for registry
    - Maintains map of HKEY handles to registry paths
    - Intercepts API calls and serves data from virtual registry
    - Returns fake handles for virtual keys
    - Blocks write operations to virtual keys
    - Handles both ANSI/Unicode conversions
+
+3. **COMConfig**: Singleton class managing COM redirections
+   - Loads and parses com_config.ini file
+   - Maps CLSIDs to DLL file paths
+   - Manages loaded COM server DLLs
+   - Resolves relative paths to absolute paths
+   - Thread-safe access
+
+4. **COMHooks**: Detours hook functions for COM
+   - Intercepts CoCreateInstance and related APIs
+   - Loads custom DLL when configured CLSID is requested
+   - Calls DllGetClassObject to get class factory
+   - Creates COM objects from custom implementations
+   - Falls back to system COM for non-redirected CLSIDs
 
 ## Debugging
 

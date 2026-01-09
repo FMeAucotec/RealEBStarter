@@ -2,6 +2,8 @@
 #include "pch.h"
 #include "RegistryHooks.h"
 #include "RegistryConfig.h"
+#include "COMHooks.h"
+#include "COMConfig.h"
 #include <string>
 
 // Global module handle
@@ -34,14 +36,22 @@ BOOL APIENTRY DllMain( HMODULE hModule,
             // Disable thread library calls for performance
             DisableThreadLibraryCalls(hModule);
             
-            // Load configuration from .reg file next to DLL
+            // Load configuration files from DLL directory
             std::wstring dllDir = GetDllDirectory();
-            std::wstring configPath = dllDir + L"registry_config.reg";
             
-            if (RegistryConfig::GetInstance().LoadConfiguration(configPath)) {
-                // Only install hooks if configuration is loaded and enabled
+            // Load registry configuration from .reg file
+            std::wstring regConfigPath = dllDir + L"registry_config.reg";
+            if (RegistryConfig::GetInstance().LoadConfiguration(regConfigPath)) {
                 if (RegistryConfig::GetInstance().IsEnabled()) {
                     InstallRegistryHooks();
+                }
+            }
+            
+            // Load COM configuration from .ini file
+            std::wstring comConfigPath = dllDir + L"com_config.ini";
+            if (COMConfig::GetInstance().LoadConfiguration(comConfigPath)) {
+                if (COMConfig::GetInstance().IsEnabled()) {
+                    InstallCOMHooks();
                 }
             }
         }
@@ -56,6 +66,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     case DLL_PROCESS_DETACH:
         if (lpReserved == nullptr) {
             // Only cleanup if we're not unloading due to process termination
+            RemoveCOMHooks();
             RemoveRegistryHooks();
         }
         break;

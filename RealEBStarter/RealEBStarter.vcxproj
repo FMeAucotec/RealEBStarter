@@ -151,6 +151,8 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="RegistryConfig.h" />
     <ClInclude Include="RegistryHooks.h" />
+    <ClInclude Include="COMConfig.h" />
+    <ClInclude Include="COMHooks.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
@@ -162,6 +164,8 @@
     </ClCompile>
     <ClCompile Include="RegistryConfig.cpp" />
     <ClCompile Include="RegistryHooks.cpp" />
+    <ClCompile Include="COMConfig.cpp" />
+    <ClCompile Include="COMHooks.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Detours\vc\Detours.vcxproj">
