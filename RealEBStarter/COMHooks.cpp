@@ -74,11 +74,18 @@ HRESULT STDAPICALLTYPE Hooked_CoCreateInstanceEx(
 ) {
     // Check if this CLSID should be redirected
     if (COMConfig::GetInstance().HasRedirectedCLSID(rclsid)) {
+        LPVOID pInstance = nullptr;
         // For CoCreateInstanceEx, we need to handle multiple interfaces
         if (dwCount > 0 && pResults) {
+            if (punkOuter == nullptr && (dwCount & CLSCTX_REMOTE_SERVER) == CLSCTX_REMOTE_SERVER)   { 
+                if (COMConfig::GetInstance().ExecuteShellCommand(rclsid)) {
+                    // maybe a wait is necessary ...
+                    // remote via PsExec from Sysinternals ???
+                }
+
+            }
             // Try to create instance with first interface
-            LPVOID pInstance = nullptr;
-            if (COMConfig::GetInstance().LoadDllAndGetClassObject(rclsid, pResults[0].pIID ? *pResults[0].pIID : IID_IUnknown, &pInstance)) {
+            else if (COMConfig::GetInstance().LoadDllAndGetClassObject(rclsid, pResults[0].pIID ? *pResults[0].pIID : IID_IUnknown, &pInstance)) {
                 // Query for all requested interfaces
                 bool allSucceeded = true;
                 for (DWORD i = 0; i < dwCount; i++) {

@@ -11,13 +11,24 @@ struct CLSIDComparer {
     }
 };
 
+// Enum for action type
+enum class COMActionType {
+    LoadDLL,        // Load a COM DLL
+    ShellExecute    // Execute a shell command
+};
+
 // Structure to hold COM DLL information
 struct COMDllMapping {
-    std::wstring clsidString;  // String representation of CLSID
-    CLSID clsid;              // Parsed CLSID
-    std::wstring dllPath;     // Path to DLL (absolute or relative)
-    HMODULE hModule;          // Loaded module handle
-    bool isLoaded;            // Whether DLL is loaded
+    std::wstring clsidString;     // String representation of CLSID
+    CLSID clsid;                  // Parsed CLSID
+    COMActionType actionType;     // Type of action to perform
+    std::wstring dllPath;         // Path to DLL (absolute or relative)
+    std::wstring shellCommand;    // Shell command to execute (for ShellExecute)
+    std::wstring shellParameters; // Command line parameters (for ShellExecute)
+    std::wstring shellVerb;       // Shell verb (open, runas, etc.)
+    HMODULE hModule;              // Loaded module handle
+    bool isLoaded;                // Whether DLL is loaded
+    bool shellExecuted;           // Whether shell command has been executed
 };
 
 class COMConfig {
@@ -34,6 +45,12 @@ public:
     
     // Load the DLL and get DllGetClassObject function
     bool LoadDllAndGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv);
+    
+    // Execute shell command for a CLSID
+    bool ExecuteShellCommand(REFCLSID rclsid);
+    
+    // Check if CLSID is mapped to a shell command
+    bool IsShellExecuteAction(REFCLSID rclsid);
     
     bool IsEnabled() const { return m_enabled; }
     const std::map<CLSID, COMDllMapping, CLSIDComparer>& GetMappings() const { return m_mappings; }
@@ -55,6 +72,8 @@ private:
     // Parsing helpers
     void ParseLine(const std::wstring& line);
     std::wstring Trim(const std::wstring& str);
+    std::wstring RemoveQuotes(const std::wstring& str);
+    std::wstring ExtractQuotedString(const std::wstring& str, size_t& pos);
     bool ParseCLSID(const std::wstring& str, CLSID& clsid);
     std::wstring CLSIDToString(REFCLSID clsid);
     

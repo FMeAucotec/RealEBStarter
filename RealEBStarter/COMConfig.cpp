@@ -57,8 +57,12 @@ bool COMConfig::LoadConfiguration(const std::wstring& configFilePath) {
 }
 
 void COMConfig::ParseLine(const std::wstring& line) {
-    // Format: "CLSID=DLL_PATH"
+    // Format 1: "CLSID=DLL_PATH"
     // Example: "{12345678-1234-1234-1234-123456789ABC}=MyComServer.dll"
+    //
+    // Format 2: "CLSID=shell:VERB:COMMAND:PARAMETERS"
+    // Example: "{12345678-1234-1234-1234-123456789ABC}=shell:open:"notepad.exe":"C:\test.txt"
+    // Example: "{12345678-1234-1234-1234-123456789ABC}=shell::"C:\Program Files\App\app.exe":"/arg1 /arg2"
     
     size_t equalPos = line.find(L'=');
     if (equalPos == std::wstring::npos) {
@@ -66,27 +70,73 @@ void COMConfig::ParseLine(const std::wstring& line) {
     }
     
     std::wstring clsidStr = Trim(line.substr(0, equalPos));
-    std::wstring dllPath = Trim(line.substr(equalPos + 1));
-    
-    // Remove quotes from DLL path if present
-    if (!dllPath.empty() && dllPath.front() == L'"' && dllPath.back() == L'"') {
-        dllPath = dllPath.substr(1, dllPath.length() - 2);
-    }
+    std::wstring value = Trim(line.substr(equalPos + 1));
     
     CLSID clsid;
     if (!ParseCLSID(clsidStr, clsid)) {
         return;  // Invalid CLSID
     }
     
-    // Resolve relative path
-    std::wstring resolvedPath = ResolvePath(dllPath, m_basePath);
-    
     COMDllMapping mapping;
     mapping.clsidString = clsidStr;
     mapping.clsid = clsid;
-    mapping.dllPath = resolvedPath;
     mapping.hModule = nullptr;
     mapping.isLoaded = false;
+    mapping.shellExecuted = false;
+    
+    // Check if this is a shell execute command
+    if (value.find(L"shell:") == 0) {
+        mapping.actionType = COMActionType::ShellExecute;
+        
+        // Parse shell command format: shell:VERB:COMMAND:PARAMETERS
+        size_t pos = 6; // Skip "shell:"
+        
+        // Extract verb (can be empty or quoted)
+        size_t colonPos = value.find(L':', pos);
+        if (colonPos != std::wstring::npos) {
+            mapping.shellVerb = Trim(value.substr(pos, colonPos - pos));
+            if (mapping.shellVerb.empty()) {
+                mapping.shellVerb = L"open"; // Default verb
+            }
+            pos = colonPos + 1;
+        }
+        
+        // Extract command (can be quoted)
+        if (pos < value.length() && value[pos] == L'"') {
+            mapping.shellCommand = ExtractQuotedString(value, pos);
+        } else {
+            colonPos = value.find(L':', pos);
+            if (colonPos != std::wstring::npos) {
+                mapping.shellCommand = Trim(value.substr(pos, colonPos - pos));
+                pos = colonPos + 1;
+            } else {
+                mapping.shellCommand = Trim(value.substr(pos));
+                pos = value.length();
+            }
+        }
+        
+        // Extract parameters (can be quoted, may contain spaces)
+        if (pos < value.length()) {
+            if (value[pos] == L':') pos++; // Skip colon
+            if (pos < value.length() && value[pos] == L'"') {
+                mapping.shellParameters = ExtractQuotedString(value, pos);
+            } else {
+                mapping.shellParameters = Trim(value.substr(pos));
+            }
+        }
+        
+        // Resolve relative command path
+        mapping.shellCommand = ResolvePath(mapping.shellCommand, m_basePath);
+    } else {
+        // Standard DLL path
+        mapping.actionType = COMActionType::LoadDLL;
+        
+        // Remove quotes from DLL path if present
+        std::wstring dllPath = RemoveQuotes(value);
+        
+        // Resolve relative path
+        mapping.dllPath = ResolvePath(dllPath, m_basePath);
+    }
     
     m_mappings[clsid] = mapping;
 }
@@ -198,4 +248,105 @@ bool COMConfig::LoadDllAndGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* p
     pFactory->Release();
     
     return SUCCEEDED(hr);
+}
+
+std::wstring COMConfig::RemoveQuotes(const std::wstring& str) {
+    if (str.length() >= 2 && str.front() == L'"' && str.back() == L'"') {
+        return str.substr(1, str.length() - 2);
+    }
+    return str;
+}
+
+std::wstring COMConfig::ExtractQuotedString(const std::wstring& str, size_t& pos) {
+    // Extract a quoted string starting at position pos
+    // Updates pos to point after the closing quote
+    if (pos >= str.length() || str[pos] != L'"') {
+        return L"";
+    }
+    
+    pos++; // Skip opening quote
+    size_t endPos = pos;
+    
+    // Find closing quote, handling escaped quotes
+    while (endPos < str.length()) {
+        if (str[endPos] == L'"') {
+            // Check if it's escaped
+            if (endPos + 1 < str.length() && str[endPos + 1] == L'"') {
+                endPos += 2; // Skip escaped quote
+                continue;
+            }
+            break; // Found closing quote
+        }
+        endPos++;
+    }
+    
+    std::wstring result = str.substr(pos, endPos - pos);
+    pos = (endPos < str.length()) ? endPos + 1 : endPos; // Move past closing quote
+    
+    // Replace escaped quotes
+    size_t escapePos = 0;
+    while ((escapePos = result.find(L"\"\"", escapePos)) != std::wstring::npos) {
+        result.replace(escapePos, 2, L"\"");
+        escapePos++;
+    }
+    
+    return result;
+}
+
+bool COMConfig::IsShellExecuteAction(REFCLSID rclsid) {
+    if (!m_enabled) {
+        return false;
+    }
+    
+    auto it = m_mappings.find(rclsid);
+    if (it == m_mappings.end()) {
+        return false;
+    }
+    
+    return it->second.actionType == COMActionType::ShellExecute;
+}
+
+bool COMConfig::ExecuteShellCommand(REFCLSID rclsid) {
+    if (!m_enabled) {
+        return false;
+    }
+    
+    auto it = m_mappings.find(rclsid);
+    if (it == m_mappings.end()) {
+        return false;
+    }
+    
+    COMDllMapping& mapping = it->second;
+    
+    // Check if this is a shell execute action
+    if (mapping.actionType != COMActionType::ShellExecute) {
+        return false;
+    }
+    
+    // Check if already executed (execute only once)
+    if (mapping.shellExecuted) {
+        return true; // Already executed, return success
+    }
+    
+    // Execute the shell command
+    SHELLEXECUTEINFOW sei = { 0 };
+    sei.cbSize = sizeof(SHELLEXECUTEINFOW);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
+    sei.lpVerb = mapping.shellVerb.empty() ? L"open" : mapping.shellVerb.c_str();
+    sei.lpFile = mapping.shellCommand.c_str();
+    sei.lpParameters = mapping.shellParameters.empty() ? nullptr : mapping.shellParameters.c_str();
+    sei.nShow = SW_SHOWNORMAL;
+    
+    BOOL result = ShellExecuteExW(&sei);
+    
+    if (result) {
+        mapping.shellExecuted = true;
+        
+        // Close handle if process was created
+        if (sei.hProcess) {
+            CloseHandle(sei.hProcess);
+        }
+    }
+    
+    return result != FALSE;
 }
