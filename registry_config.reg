@@ -1,0 +1,42 @@
+Windows Registry Editor Version 5.00
+
+; This is a sample registry configuration file for RealEBStarter DLL
+; Export registry keys from regedit.exe and place them here
+; The DLL will intercept registry reads and return values from this file instead
+
+; Example 1: Override application settings
+[HKEY_CURRENT_USER\Software\MyApplication\Settings]
+"ServerURL"="http://test.example.com"
+"Port"=dword:00001234
+"EnableDebug"=dword:00000001
+
+; Example 2: Override software version info
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyCompany\MyProduct]
+"Version"="1.0.0-test"
+"InstallPath"="C:\\Program Files\\MyProduct\\Test"
+"License"="TEST-LICENSE-KEY-12345"
+
+; Example 3: Binary data (hex values)
+[HKEY_CURRENT_USER\Software\TestApp\Config]
+"BinaryData"=hex:01,02,03,04,05,06,07,08
+"StringValue"="This is a test value"
+"DwordValue"=dword:ffffffff
+
+; Example 4: Multi-string value (REG_MULTI_SZ - type 7)
+[HKEY_LOCAL_MACHINE\SOFTWARE\TestSoftware]
+"MultiString"=hex(7):54,00,65,00,73,00,74,00,00,00,56,00,61,00,6c,00,75,00,\
+  65,00,00,00,00,00
+
+; Example 5: Expandable string (REG_EXPAND_SZ - type 2)
+[HKEY_CURRENT_USER\Environment]
+"TEMP"=hex(2):25,00,55,00,53,00,45,00,52,00,50,00,52,00,4f,00,46,00,49,00,4c,\
+  00,45,00,25,00,5c,00,54,00,65,00,6d,00,70,00,00,00
+
+; Notes:
+; - Keys are case-insensitive
+; - The virtual registry is READ-ONLY - write/create/delete operations will return ERROR_ACCESS_DENIED
+; - String values use "quotes"
+; - DWORD values use dword:XXXXXXXX (hex)
+; - Binary values use hex:XX,XX,XX,XX
+; - Other types use hex(N):XX,XX,XX where N is the registry type number
+; - Multi-line hex values end lines with backslash (\)
