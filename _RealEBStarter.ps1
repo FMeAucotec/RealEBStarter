@@ -1,15 +1,29 @@
-# DLL Injection Script
-# Verwendung: .\Inject-DLL.ps1 -ProcessId <PID> -DllPath <Pfad zur DLL> -ExportName <Funktionsname>
+# DLL Injection Script mit Prozessstart
+# Verwendung: 
+#   .\Inject-DLL.ps1 -ProcessId <PID> -DllPath <Pfad zur DLL> -ExportName <Funktionsname>
+#   .\Inject-DLL.ps1 -ExecutablePath <Pfad zur EXE> -DllPath <Pfad zur DLL> -ExportName <Funktionsname> [-Arguments <Args>] [-Suspended]
 
 param(
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$false)]
     [int]$ProcessId,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$ExecutablePath,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$Arguments,
     
     [Parameter(Mandatory=$true)]
     [string]$DllPath,
     
     [Parameter(Mandatory=$true)]
-    [string]$ExportName
+    [string]$ExportName,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$Suspended,
+    
+    [Parameter(Mandatory=$false)]
+    [int]$InjectionDelay = 1000
 )
 
 # P/Invoke Definitionen
@@ -79,6 +93,12 @@ public class WinAPI {
         uint dwMilliseconds);
     
     [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint ResumeThread(IntPtr hThread);
+    
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint SuspendThread(IntPtr hThread);
+    
+    [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool VirtualQuery(
         IntPtr lpAddress,
         out MEMORY_BASIC_INFORMATION lpBuffer,
@@ -105,6 +125,19 @@ public class WinAPI {
         out MODULEINFO lpmodinfo,
         uint cb);
     
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool CreateProcess(
+        string lpApplicationName,
+        string lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        bool bInheritHandles,
+        uint dwCreationFlags,
+        IntPtr lpEnvironment,
+        string lpCurrentDirectory,
+        ref STARTUPINFO lpStartupInfo,
+        out PROCESS_INFORMATION lpProcessInformation);
+    
     [StructLayout(LayoutKind.Sequential)]
     public struct MEMORY_BASIC_INFORMATION {
         public IntPtr BaseAddress;
@@ -123,6 +156,36 @@ public class WinAPI {
         public IntPtr EntryPoint;
     }
     
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct STARTUPINFO {
+        public int cb;
+        public string lpReserved;
+        public string lpDesktop;
+        public string lpTitle;
+        public int dwX;
+        public int dwY;
+        public int dwXSize;
+        public int dwYSize;
+        public int dwXCountChars;
+        public int dwYCountChars;
+        public int dwFillAttribute;
+        public int dwFlags;
+        public short wShowWindow;
+        public short cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_INFORMATION {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public int dwProcessId;
+        public int dwThreadId;
+    }
+    
     // Konstanten
     public const uint PROCESS_ALL_ACCESS = 0x1F0FFF;
     public const uint MEM_COMMIT = 0x1000;
@@ -132,6 +195,11 @@ public class WinAPI {
     public const uint PAGE_READWRITE = 0x04;
     public const uint PAGE_READONLY = 0x02;
     public const uint PAGE_EXECUTE_READ = 0x20;
+    
+    // Process Creation Flags
+    public const uint CREATE_SUSPENDED = 0x00000004;
+    public const uint CREATE_NEW_CONSOLE = 0x00000010;
+    public const uint NORMAL_PRIORITY_CLASS = 0x00000020;
 }
 "@
 
@@ -139,6 +207,65 @@ function Get-LastWin32Error {
     $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
     $errorMessage = [System.ComponentModel.Win32Exception]$errorCode
     return "Error $errorCode : $($errorMessage.Message)"
+}
+
+function Start-ProcessForInjection {
+    param(
+        [string]$ExecutablePath,
+        [string]$Arguments,
+        [bool]$StartSuspended
+    )
+    
+    $si = New-Object WinAPI+STARTUPINFO
+    $si.cb = [System.Runtime.InteropServices.Marshal]::SizeOf($si)
+    
+    $pi = New-Object WinAPI+PROCESS_INFORMATION
+    
+    $creationFlags = [WinAPI]::NORMAL_PRIORITY_CLASS
+    if ($StartSuspended) {
+        $creationFlags = $creationFlags -bor [WinAPI]::CREATE_SUSPENDED
+    }
+    
+    $commandLine = if ($Arguments) {
+        "`"$ExecutablePath`" $Arguments"
+    } else {
+        "`"$ExecutablePath`""
+    }
+    
+    Write-Host "[*] Starte Prozess: $ExecutablePath" -ForegroundColor Cyan
+    if ($Arguments) {
+        Write-Host "[*] Mit Argumenten: $Arguments" -ForegroundColor Cyan
+    }
+    if ($StartSuspended) {
+        Write-Host "[*] Prozess wird im suspendierten Zustand gestartet" -ForegroundColor Cyan
+    }
+    
+    $result = [WinAPI]::CreateProcess(
+        $null,
+        $commandLine,
+        [IntPtr]::Zero,
+        [IntPtr]::Zero,
+        $false,
+        $creationFlags,
+        [IntPtr]::Zero,
+        $null,
+        [ref]$si,
+        [ref]$pi
+    )
+    
+    if (-not $result) {
+        throw "Konnte Prozess nicht erstellen: $(Get-LastWin32Error)"
+    }
+    
+    Write-Host "[+] Prozess gestartet mit PID: $($pi.dwProcessId)" -ForegroundColor Green
+    Write-Host "[+] Thread-ID: $($pi.dwThreadId)" -ForegroundColor Green
+    
+    return @{
+        ProcessHandle = $pi.hProcess
+        ThreadHandle = $pi.hThread
+        ProcessId = $pi.dwProcessId
+        ThreadId = $pi.dwThreadId
+    }
 }
 
 function Get-ModuleInfo {
@@ -213,31 +340,20 @@ function Get-ReadableMemorySize {
     return $totalSize
 }
 
-try {
-    Write-Host "[*] Starte DLL-Injection..." -ForegroundColor Cyan
-    
-    # Prüfe ob DLL existiert
-    if (-not (Test-Path $DllPath)) {
-        throw "DLL-Datei nicht gefunden: $DllPath"
-    }
-    
-    $DllPath = (Resolve-Path $DllPath).Path
-    Write-Host "[+] DLL-Pfad: $DllPath" -ForegroundColor Green
-    
-    # Öffne Zielprozess
-    Write-Host "[*] Öffne Prozess mit PID: $ProcessId" -ForegroundColor Cyan
-    $hProcess = [WinAPI]::OpenProcess([WinAPI]::PROCESS_ALL_ACCESS, $false, $ProcessId)
-    
-    if ($hProcess -eq [IntPtr]::Zero) {
-        throw "Konnte Prozess nicht öffnen: $(Get-LastWin32Error)"
-    }
+function Inject-DLL {
+    param(
+        [IntPtr]$ProcessHandle,
+        [int]$ProcessId,
+        [string]$DllPath,
+        [string]$ExportName
+    )
     
     try {
         Write-Host "[+] Prozess erfolgreich geöffnet" -ForegroundColor Green
         
         # Lade DLL und hole Informationen
         Write-Host "[*] Lade DLL und hole Modul-Informationen..." -ForegroundColor Cyan
-        $moduleInfo = Get-ModuleInfo -ProcessHandle $hProcess -DllPath $DllPath
+        $moduleInfo = Get-ModuleInfo -ProcessHandle $ProcessHandle -DllPath $DllPath
         
         Write-Host "[+] Modul-Basis-Adresse: 0x$($moduleInfo.BaseAddress.ToString('X'))" -ForegroundColor Green
         Write-Host "[+] Modul-Größe: $($moduleInfo.Size) Bytes" -ForegroundColor Green
@@ -255,7 +371,7 @@ try {
         # Allokiere Speicher im Zielprozess
         Write-Host "[*] Allokiere Speicher im Zielprozess..." -ForegroundColor Cyan
         $remoteMemory = [WinAPI]::VirtualAllocEx(
-            $hProcess,
+            $ProcessHandle,
             $moduleInfo.BaseAddress,
             $moduleInfo.Size,
             [WinAPI]::MEM_COMMIT -bor [WinAPI]::MEM_RESERVE,
@@ -280,7 +396,7 @@ try {
         Write-Host "[*] Schreibe DLL in Zielprozess..." -ForegroundColor Cyan
         $bytesWritten = 0
         $result = [WinAPI]::WriteProcessMemory(
-            $hProcess,
+            $ProcessHandle,
             $remoteMemory,
             $dllData,
             $readableSize,
@@ -297,7 +413,7 @@ try {
         Write-Host "[*] Erstelle Remote-Thread..." -ForegroundColor Cyan
         $threadId = 0
         $hThread = [WinAPI]::CreateRemoteThread(
-            $hProcess,
+            $ProcessHandle,
             [IntPtr]::Zero,
             0,
             $procAddress,
@@ -320,13 +436,111 @@ try {
         [WinAPI]::FreeLibrary($moduleInfo.Handle) | Out-Null
         
     }
+    catch {
+        throw
+    }
+}
+
+# Main Script Logic
+try {
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "   DLL Injection Script" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Validierung der Parameter
+    if (-not $ProcessId -and -not $ExecutablePath) {
+        throw "Entweder -ProcessId oder -ExecutablePath muss angegeben werden!"
+    }
+    
+    if ($ProcessId -and $ExecutablePath) {
+        throw "Nur -ProcessId ODER -ExecutablePath kann angegeben werden, nicht beides!"
+    }
+    
+    # Prüfe ob DLL existiert
+    if (-not (Test-Path $DllPath)) {
+        throw "DLL-Datei nicht gefunden: $DllPath"
+    }
+    
+    $DllPath = (Resolve-Path $DllPath).Path
+    Write-Host "[+] DLL-Pfad: $DllPath" -ForegroundColor Green
+    Write-Host ""
+    
+    $hProcess = [IntPtr]::Zero
+    $hThread = [IntPtr]::Zero
+    $createdProcess = $false
+    
+    try {
+        # Szenario 1: Prozess starten
+        if ($ExecutablePath) {
+            if (-not (Test-Path $ExecutablePath)) {
+                throw "Executable nicht gefunden: $ExecutablePath"
+            }
+            
+            $ExecutablePath = (Resolve-Path $ExecutablePath).Path
+            
+            $processInfo = Start-ProcessForInjection -ExecutablePath $ExecutablePath -Arguments $Arguments -StartSuspended $Suspended.IsPresent
+            $ProcessId = $processInfo.ProcessId
+            $hProcess = $processInfo.ProcessHandle
+            $hThread = $processInfo.ThreadHandle
+            $createdProcess = $true
+            
+            Write-Host ""
+            
+            # Warte kurz, damit der Prozess initialisiert wird
+            if (-not $Suspended.IsPresent) {
+                Write-Host "[*] Warte $InjectionDelay ms auf Prozess-Initialisierung..." -ForegroundColor Cyan
+                Start-Sleep -Milliseconds $InjectionDelay
+            }
+        }
+        # Szenario 2: Existierenden Prozess öffnen
+        else {
+            Write-Host "[*] Öffne existierenden Prozess mit PID: $ProcessId" -ForegroundColor Cyan
+            $hProcess = [WinAPI]::OpenProcess([WinAPI]::PROCESS_ALL_ACCESS, $false, $ProcessId)
+            
+            if ($hProcess -eq [IntPtr]::Zero) {
+                throw "Konnte Prozess nicht öffnen: $(Get-LastWin32Error)"
+            }
+        }
+        
+        # DLL injizieren
+        Inject-DLL -ProcessHandle $hProcess -ProcessId $ProcessId -DllPath $DllPath -ExportName $ExportName
+        
+        # Wenn Prozess im suspendierten Zustand gestartet wurde, fortsetzen
+        if ($createdProcess -and $Suspended.IsPresent -and $hThread -ne [IntPtr]::Zero) {
+            Write-Host ""
+            Write-Host "[*] Setze Hauptthread fort..." -ForegroundColor Cyan
+            $resumeResult = [WinAPI]::ResumeThread($hThread)
+            if ($resumeResult -eq 0xFFFFFFFF) {
+                Write-Host "[!] Warnung: Konnte Thread nicht fortsetzen: $(Get-LastWin32Error)" -ForegroundColor Yellow
+            } else {
+                Write-Host "[+] Thread fortgesetzt (vorheriger Suspend-Count: $resumeResult)" -ForegroundColor Green
+            }
+        }
+        
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host "   Injection erfolgreich abgeschlossen!" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Green
+        
+    }
     finally {
-        # Cleanup Process-Handle
-        [WinAPI]::CloseHandle($hProcess) | Out-Null
+        # Cleanup
+        if ($hProcess -ne [IntPtr]::Zero) {
+            [WinAPI]::CloseHandle($hProcess) | Out-Null
+        }
+        if ($hThread -ne [IntPtr]::Zero) {
+            [WinAPI]::CloseHandle($hThread) | Out-Null
+        }
     }
     
 }
 catch {
-    Write-Host "[!] Fehler: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "   Fehler aufgetreten!" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "[!] $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ""
     exit 1
 }
