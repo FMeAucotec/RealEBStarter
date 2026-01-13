@@ -171,7 +171,7 @@
             MinimumSize = new Size(800, 600);
             Name = "Form1";
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "btnClear";
+            Text = "Anneliese R";
             ResumeLayout(false);
             PerformLayout();
         }

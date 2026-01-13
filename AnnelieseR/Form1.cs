@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 
 namespace AnnelieseR
@@ -231,38 +232,45 @@ namespace AnnelieseR
             sb.AppendLine();
 
             // Group by DLL
-            var grouped = results.GroupBy(r => r.DllName).OrderBy(g => g.Key);
+            //var grouped = results.GroupBy(r => r.DllName).OrderBy(g => g.Key);
 
-            foreach (var group in grouped)
+            //foreach (var group in grouped)
+            //{
+            //    sb.AppendLine($"[{group.Key}]");
+            //    sb.AppendLine($"Path={group.First().DllPath}");
+            //    sb.AppendLine($"Type={group.First().Type}");
+            //    sb.AppendLine($"Architecture={group.First().Architecture}");
+            //    sb.AppendLine($"CLSIDCount={group.Count()}");
+
+            //    int index = 0;
+            //    foreach (var item in group)
+            //    {
+            //        if (!string.IsNullOrEmpty(item.CLSID) && item.CLSID != "(Not Registered)")
+            //        {
+            //            sb.AppendLine($"CLSID{index}={item.CLSID}");
+
+            //            if (!string.IsNullOrEmpty(item.ProgID))
+            //            {
+            //                sb.AppendLine($"ProgID{index}={item.ProgID}");
+            //            }
+
+            //            if (!string.IsNullOrEmpty(item.ClassName))
+            //            {
+            //                sb.AppendLine($"ClassName{index}={item.ClassName}");
+            //            }
+
+            //            index++;
+            //        }
+            //    }
+
+            //    sb.AppendLine();
+            //}
+
+            foreach (var item in results)
             {
-                sb.AppendLine($"[{group.Key}]");
-                sb.AppendLine($"Path={group.First().DllPath}");
-                sb.AppendLine($"Type={group.First().Type}");
-                sb.AppendLine($"Architecture={group.First().Architecture}");
-                sb.AppendLine($"CLSIDCount={group.Count()}");
-
-                int index = 0;
-                foreach (var item in group)
-                {
-                    if (!string.IsNullOrEmpty(item.CLSID) && item.CLSID != "(Not Registered)")
-                    {
-                        sb.AppendLine($"CLSID{index}={item.CLSID}");
-
-                        if (!string.IsNullOrEmpty(item.ProgID))
-                        {
-                            sb.AppendLine($"ProgID{index}={item.ProgID}");
-                        }
-
-                        if (!string.IsNullOrEmpty(item.ClassName))
-                        {
-                            sb.AppendLine($"ClassName{index}={item.ClassName}");
-                        }
-
-                        index++;
-                    }
-                }
-
-                sb.AppendLine();
+                sb.Append(item.CLSID);
+                sb.Append("=");
+                sb.AppendLine(item.DllName);
             }
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
