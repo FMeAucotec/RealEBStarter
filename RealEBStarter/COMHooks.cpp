@@ -80,7 +80,7 @@ HRESULT STDAPICALLTYPE Hooked_CoCreateInstanceEx(
             if (punkOuter == nullptr && (dwCount & CLSCTX_REMOTE_SERVER) == CLSCTX_REMOTE_SERVER)   { 
                 if (COMConfig::GetInstance().ExecuteShellCommand(rclsid)) {
                     // maybe a wait is necessary ...
-                    // remote via PsExec from Sysinternals ???
+                    // remote possible via PsExec from Sysinternals ???
                 }
 
             }

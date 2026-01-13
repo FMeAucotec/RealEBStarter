@@ -5,6 +5,10 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Mammouth AI",
       "api": "https://api.mammouth.ai/v1",
+	   "options": {
+        "baseURL": "https://api.mammouth.ai/v1",
+        "includeUsage": true
+      },
       "models": {
         "gpt-5.2-chat": { "name": "gpt 5.2 chat" },
         "gpt-5.1-chat": { "name": "gpt 5.1 chat" },
