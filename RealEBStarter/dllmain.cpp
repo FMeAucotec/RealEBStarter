@@ -1,10 +1,15 @@
-// dllmain.cpp : Defines the entry point for the DLL application.
+// dllmain.cpp : Defines the entry point for the DLL Application / Visio VSL Add-in
 #include "pch.h"
 #include "RegistryHooks.h"
 #include "RegistryConfig.h"
 #include "COMHooks.h"
 #include "COMConfig.h"
 #include <string>
+#include <comdef.h>
+
+// Forward declaration for IUnknown (Visio Application interface)
+// The actual interface will be accessed via COM
+struct IUnknown;
 
 // Global module handle
 HMODULE g_hModule = NULL;
@@ -73,4 +78,40 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     }
     return TRUE;
 }
+
+// Visio VSL Required Exports
+
+// VisioLibMain - Required entry point for Visio VSL add-ins
+// Note: IUnknown* is used instead of IVisioApplication* for simplicity
+extern "C" __declspec(dllexport) HRESULT WINAPI VisioLibMain(
+    IUnknown* pVisApp,
+    BSTR bstrAddOnPath,
+    long lAddOnType,
+    long lAddOnID)
+{
+    if (!pVisApp) {
+        return E_INVALIDARG;
+    }
+
+    // Initialize the Visio add-in here
+    // This is called when Visio loads the VSL
+    // The registry and COM hooks are already installed in DllMain
+    
+    return S_OK;
+}
+
+// VaoVersion - Returns the Visio Add-On version
+extern "C" __declspec(dllexport) HRESULT WINAPI VaoVersion(WORD* pwVersion)
+{
+    if (!pwVersion) {
+        return E_POINTER;
+    }
+    
+    // Return Visio version this add-on supports
+    // For Visio 2016/2019/2021: use version 16
+    *pwVersion = 16;
+    
+    return S_OK;
+}
+
 
