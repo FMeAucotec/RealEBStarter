@@ -124,22 +124,27 @@
             // Assembly
             // 
             Assembly.Text = "Assembly";
+            Assembly.Width = 200;
             // 
             // CLSID
             // 
             CLSID.Text = "CLSID";
+            CLSID.Width = 200;
             // 
             // ProgID
             // 
             ProgID.Text = "ProgID";
+            ProgID.Width = 100;
             // 
             // Typename
             // 
             Typename.Text = "Typename";
+            Typename.Width = 100;
             // 
             // Platform
             // 
             Platform.Text = "Platform";
+            Platform.Width = 80;
             // 
             // Arch
             // 
