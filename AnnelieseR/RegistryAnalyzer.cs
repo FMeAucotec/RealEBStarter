@@ -94,6 +94,54 @@ namespace AnnelieseR
                                                 ClassName = className
                                             });
                                         }
+                                        else if(serverPath == "mscoree.dll")
+                                        {
+                                            try
+                                            {
+                                                normalizedServer = Path.GetFullPath(inprocKey.GetValue("CodeBase") as string)
+                                                    .TrimEnd('\\').ToLowerInvariant();
+                                            }
+                                            catch
+                                            {
+                                                normalizedServer = serverPath.ToLowerInvariant();
+                                            }
+
+                                            if (normalizedServer == normalizedPath ||
+                                              normalizedServer.EndsWith("\\" + dllName.ToLowerInvariant()))
+                                            {
+                                                string progId = "";
+                                                string className = classKey.GetValue("") as string ?? "";
+
+                                                // Get ProgID
+                                                using (RegistryKey progIdKey = classKey.OpenSubKey("ProgID"))
+                                                {
+                                                    if (progIdKey != null)
+                                                    {
+                                                        progId = progIdKey.GetValue("") as string ?? "";
+                                                    }
+                                                }
+
+                                                // Try version independent ProgID
+                                                if (string.IsNullOrEmpty(progId))
+                                                {
+                                                    using (RegistryKey vProgIdKey =
+                                                        classKey.OpenSubKey("VersionIndependentProgID"))
+                                                    {
+                                                        if (vProgIdKey != null)
+                                                        {
+                                                            progId = vProgIdKey.GetValue("") as string ?? "";
+                                                        }
+                                                    }
+                                                }
+
+                                                classes.Add(new RegistryCOMClass
+                                                {
+                                                    CLSID = clsidName,
+                                                    ProgID = progId,
+                                                    ClassName = className
+                                                });
+                                            }
+                                        }
                                     }
                                 }
                             }

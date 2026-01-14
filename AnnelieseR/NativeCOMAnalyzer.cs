@@ -26,13 +26,12 @@ namespace AnnelieseR
 
             try
             {
-                hModule = LoadLibraryEx(dllPath, IntPtr.Zero,
-                    DONT_RESOLVE_DLL_REFERENCES | LOAD_LIBRARY_AS_DATAFILE);
+                hModule = LoadLibraryEx(dllPath, IntPtr.Zero, 0);
 
-                if (hModule == IntPtr.Zero)
-                {
-                    hModule = LoadLibraryEx(dllPath, IntPtr.Zero, 0);
-                }
+                //if (hModule == IntPtr.Zero)
+                //{
+                //    hModule = LoadLibraryEx(dllPath, IntPtr.Zero, 0);
+                //}
 
                 if (hModule == IntPtr.Zero)
                 {

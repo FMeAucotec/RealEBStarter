@@ -14,8 +14,8 @@ namespace AnnelieseR
 
             try
             {
-                byte[] rawAssembly = File.ReadAllBytes(dllPath);
-                Assembly assembly = Assembly.Load(rawAssembly);
+                //byte[] rawAssembly = File.ReadAllBytes(dllPath);
+                Assembly assembly = Assembly.LoadFrom(dllPath);
 
                 foreach (Type type in assembly.GetExportedTypes())
                 {
@@ -72,7 +72,7 @@ namespace AnnelieseR
                     }
                 }
             }
-            catch
+            catch(Exception e)
             {
                 // Could not load assembly
             }

@@ -126,68 +126,25 @@ namespace AnnelieseR
             bool isDotNet = PEAnalyzer.IsDotNetAssembly(dllPath);
             string architecture = PEAnalyzer.GetArchitecture(dllPath);
 
-            if (isDotNet)
-            {
-                // .NET Assembly
-                List<DotNetCOMClass> dotnetClasses = DotNetAnalyzer.GetCOMClasses(dllPath);
+            List<RegistryCOMClass> registryClasses = RegistryAnalyzer.GetCLSIDsForDLL(dllPath);
 
-                foreach (var comClass in dotnetClasses)
+            if (registryClasses.Count > 0)
+            {
+                foreach (var regClass in registryClasses)
                 {
                     results.Add(new COMClassInfo
                     {
                         DllName = dllName,
                         DllPath = dllPath,
-                        CLSID = comClass.CLSID,
-                        ProgID = comClass.ProgID,
-                        ClassName = comClass.ClassName,
-                        Type = ".NET COM",
+                        CLSID = regClass.CLSID,
+                        ProgID = regClass.ProgID,
+                        ClassName = regClass.ClassName,
+                        Type =  isDotNet? ".NET COM":"Native COM",
                         Architecture = architecture
                     });
                 }
             }
-            else
-            {
-                // Native DLL
-                var exports = NativeCOMAnalyzer.AnalyzeCOMExports(dllPath);
-                bool hasCOM = exports.ContainsKey("DllGetClassObject") && exports["DllGetClassObject"];
 
-                if (hasCOM)
-                {
-                    // Try to get CLSIDs from registry
-                    List<RegistryCOMClass> registryClasses = RegistryAnalyzer.GetCLSIDsForDLL(dllPath);
-
-                    if (registryClasses.Count > 0)
-                    {
-                        foreach (var regClass in registryClasses)
-                        {
-                            results.Add(new COMClassInfo
-                            {
-                                DllName = dllName,
-                                DllPath = dllPath,
-                                CLSID = regClass.CLSID,
-                                ProgID = regClass.ProgID,
-                                ClassName = regClass.ClassName,
-                                Type = "Native COM",
-                                Architecture = architecture
-                            });
-                        }
-                    }
-                    else
-                    {
-                        // Has COM exports but not registered
-                        results.Add(new COMClassInfo
-                        {
-                            DllName = dllName,
-                            DllPath = dllPath,
-                            CLSID = "(Not Registered)",
-                            ProgID = null,
-                            ClassName = null,
-                            Type = "Native COM (Unregistered)",
-                            Architecture = architecture
-                        });
-                    }
-                }
-            }
         }
 
         private void BtnExport_Click(object sender, EventArgs e)
