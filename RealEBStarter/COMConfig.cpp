@@ -12,8 +12,10 @@ COMConfig& COMConfig::GetInstance() {
 COMConfig::~COMConfig() {
     // Unload all DLLs
     for (auto& pair : m_mappings) {
-        if (pair.second.isLoaded && pair.second.hModule) {
-            FreeLibrary(pair.second.hModule);
+        if (pair.second.isLoaded){
+            if(pair.second.hModule) 
+                 FreeLibrary(pair.second.hModule);
+
         }
     }
 }
@@ -220,11 +222,41 @@ bool COMConfig::LoadDllAndGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* p
     
     // Load DLL if not already loaded
     if (!mapping.isLoaded) {
+		// pe analyze: use LoadLibraryEx with LOAD_WITH_ALTERED_SEARCH_PATH if needed
+
         mapping.hModule = LoadLibraryW(mapping.dllPath.c_str());
         if (!mapping.hModule) {
-            return false;
+            mapping.managedAssembly = System::Reflection::Assembly::LoadFrom(gcnew System::String(mapping.dllPath.c_str()));
+            if(nullptr == static_cast<System::Reflection::Assembly^>(mapping.managedAssembly))
+                return false;
+            mapping.isDotNet = true;
         }
         mapping.isLoaded = true;
+    }
+
+    if (mapping.isDotNet)
+    {
+        for each (System::Type^ type in mapping.managedAssembly->GetTypes())
+        {
+            array<System::Object^>^ attrs = type->GetCustomAttributes(System::Runtime::InteropServices::ComVisibleAttribute::typeid, false);
+            if (attrs->Length > 0 && safe_cast<System::Runtime::InteropServices::ComVisibleAttribute^>(attrs[0])->Value)
+            {
+                System::Guid typeGuid = type->GUID;
+                System::Guid clsid = System::Guid(gcnew System::String(CLSIDToString(rclsid).c_str()));
+                if (typeGuid == clsid)
+                {
+                    System::Object^ obj = System::Activator::CreateInstance(type);
+                    System::IntPtr pUnk = System::Runtime::InteropServices::Marshal::GetIUnknownForObject(obj);
+                    System::Guid riid2  = System::Guid(gcnew System::String(CLSIDToString(riid).c_str()));
+                    System::IntPtr ppv2 = System::IntPtr::Zero;
+                    HRESULT hr = static_cast<HRESULT>(System::Runtime::InteropServices::Marshal::QueryInterface(pUnk, riid2, ppv2));
+					ppv = reinterpret_cast<LPVOID*>(ppv2.ToPointer());
+                    System::Runtime::InteropServices::Marshal::Release(pUnk);
+                    return SUCCEEDED(hr);
+                }
+            }
+		}
+        return false;
     }
     
     // Get DllGetClassObject function

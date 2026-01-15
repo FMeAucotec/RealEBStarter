@@ -3,6 +3,7 @@
 #include <map>
 #include <Windows.h>
 #include <combaseapi.h>
+#include <vcclr.h>
 
 // Custom comparer for CLSID to use in map
 struct CLSIDComparer {
@@ -28,7 +29,9 @@ struct COMDllMapping {
     std::wstring shellVerb;       // Shell verb (open, runas, etc.)
     HMODULE hModule;              // Loaded module handle
     bool isLoaded;                // Whether DLL is loaded
+    bool isDotNet = false;
     bool shellExecuted;           // Whether shell command has been executed
+    gcroot<System::Reflection::Assembly^> managedAssembly = nullptr; // Managed assembly reference (if applicable)
 };
 
 class COMConfig {
