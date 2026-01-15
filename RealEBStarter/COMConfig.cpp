@@ -234,17 +234,13 @@ bool COMConfig::LoadDllAndGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* p
         mapping.isLoaded = true;
     }
 
-    if (mapping.isDotNet)
-    {
-        for each (System::Type^ type in mapping.managedAssembly->GetTypes())
-        {
+    if (mapping.isDotNet) {
+        for each (System::Type^ type in mapping.managedAssembly->GetTypes())  {
             array<System::Object^>^ attrs = type->GetCustomAttributes(System::Runtime::InteropServices::ComVisibleAttribute::typeid, false);
-            if (attrs->Length > 0 && safe_cast<System::Runtime::InteropServices::ComVisibleAttribute^>(attrs[0])->Value)
-            {
+            if (attrs->Length > 0 && safe_cast<System::Runtime::InteropServices::ComVisibleAttribute^>(attrs[0])->Value)  {
                 System::Guid typeGuid = type->GUID;
                 System::Guid clsid = System::Guid(gcnew System::String(CLSIDToString(rclsid).c_str()));
-                if (typeGuid == clsid)
-                {
+                if (typeGuid == clsid) {
                     System::Object^ obj = System::Activator::CreateInstance(type);
                     System::IntPtr pUnk = System::Runtime::InteropServices::Marshal::GetIUnknownForObject(obj);
                     System::Guid riid2  = System::Guid(gcnew System::String(CLSIDToString(riid).c_str()));
