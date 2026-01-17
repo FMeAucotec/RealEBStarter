@@ -16,10 +16,10 @@
     },
     "mammouth": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Mammouth AI",
-      "api": "https://api.mammouth.ai/v1",
+      "name": "Openrouter AI",
+      "api": "https://openrouter.ai/v1",
 	   "options": {
-        "baseURL": "https://api.mammouth.ai/v1",
+        "baseURL": "https://openrouter.ai/v1",
         "includeUsage": true
       },
       "models": {

@@ -1,0 +1,6 @@
+LIBRARY "RealEBStarter"
+
+EXPORTS
+    ; Visio VSL Required Exports
+    VisioLibMain    @1
+    VaoVersion      @2

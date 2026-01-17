@@ -128,14 +128,48 @@ enabled=true
 
 ## Usage
 
-### Method 1: DLL Injection
-Use a DLL injection tool to inject `RealEBStarter.dll` into the target process:
+### Method 1: EBStarterExe (Recommended)
+
+The easiest way to use RealEBStarter is with the included `EBStarterExe.exe` console application.
+
+**Launch a new process with DLL:**
 ```bash
-# Example using withdll.exe from Detours
+EBStarterExe.exe -launch notepad.exe
+EBStarterExe.exe -launch "C:\Program Files\MyApp\app.exe" /arg1 /arg2
+```
+
+**Inject into running process by name:**
+```bash
+EBStarterExe.exe -inject -name notepad.exe
+EBStarterExe.exe -inject -name chrome.exe
+```
+
+**Inject into running process by PID:**
+```bash
+EBStarterExe.exe -inject -pid 1234
+```
+
+**List all running processes:**
+```bash
+EBStarterExe.exe -list
+```
+
+**Use custom DLL path:**
+```bash
+EBStarterExe.exe -launch notepad.exe -dll "C:\MyDlls\RealEBStarter.dll"
+```
+
+**Important Notes:**
+- `EBStarterExe.exe` and `RealEBStarter.dll` must be in the same directory (unless using `-dll`)
+- Administrator privileges may be required for some processes
+- Match architecture: use x64 for 64-bit processes, x86 for 32-bit processes
+
+### Method 2: withdll.exe (Detours)
+```bash
 withdll.exe /d:RealEBStarter.dll TargetApp.exe
 ```
 
-### Method 2: CreateProcess with Detours
+### Method 3: CreateProcess with Detours
 ```cpp
 #include <detours.h>
 
@@ -150,7 +184,7 @@ DetourCreateProcessWithDllEx(
 );
 ```
 
-### Method 3: AppInit_DLLs (Not recommended)
+### Method 4: AppInit_DLLs (Not recommended)
 Add to registry (requires admin rights and reboot):
 ```
 HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows
@@ -205,6 +239,7 @@ LoadAppInit_DLLs = 1
 
 ### Files
 
+**RealEBStarter (DLL Project)**
 - `dllmain.cpp` - DLL entry point, initializes hooking
 - `RegistryConfig.h/cpp` - .reg file parser and virtual registry storage
 - `RegistryHooks.h/cpp` - Registry API hook implementations
@@ -212,6 +247,13 @@ LoadAppInit_DLLs = 1
 - `COMHooks.h/cpp` - COM API hook implementations
 - `registry_config.reg` - Virtual registry configuration (user-editable)
 - `com_config.ini` - COM redirection configuration (user-editable)
+
+**EBStarterExe (Injector Application)**
+- `EBStarterExe.cpp` - Console application for DLL injection
+  - Launch processes with DLL pre-injected
+  - Inject DLL into running processes by name or PID
+  - List running processes
+  - Command-line interface for easy automation
 
 ### Key Components
 
@@ -242,6 +284,14 @@ LoadAppInit_DLLs = 1
    - Calls DllGetClassObject to get class factory
    - Creates COM objects from custom implementations
    - Falls back to system COM for non-redirected CLSIDs
+
+5. **EBStarterExe**: Console injector application
+   - Uses CreateRemoteThread for DLL injection
+   - Supports launching new processes with DLL pre-loaded
+   - Supports injecting into existing processes
+   - Process discovery by name or PID
+   - Automatically finds RealEBStarter.dll in same directory
+   - Clean error handling and user feedback
 
 ## Debugging
 
