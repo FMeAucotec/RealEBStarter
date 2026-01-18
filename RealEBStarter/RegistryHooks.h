@@ -88,6 +88,30 @@ typedef LSTATUS (WINAPI* RegDeleteValueA_t)(
     LPCSTR lpValueName
 );
 
+typedef LSTATUS (WINAPI* RegGetValueW_t)(
+    HKEY hKey,
+    LPCWSTR lpSubKey,
+    LPCWSTR lpValue,
+    DWORD dwFlags,
+    LPDWORD pdwType,
+    PVOID pvData,
+    LPDWORD pcbData
+);
+
+typedef LSTATUS (WINAPI* RegGetValueA_t)(
+    HKEY hKey,
+    LPCSTR lpSubKey,
+    LPCSTR lpValue,
+    DWORD dwFlags,
+    LPDWORD pdwType,
+    PVOID pvData,
+    LPDWORD pcbData
+);
+
+typedef LSTATUS (WINAPI* RegCloseKey_t)(
+    HKEY hKey
+);
+
 // Hooked functions
 LSTATUS WINAPI Hooked_RegOpenKeyExW(
     HKEY hKey,
@@ -175,6 +199,30 @@ LSTATUS WINAPI Hooked_RegDeleteValueA(
     LPCSTR lpValueName
 );
 
+LSTATUS WINAPI Hooked_RegGetValueW(
+    HKEY hKey,
+    LPCWSTR lpSubKey,
+    LPCWSTR lpValue,
+    DWORD dwFlags,
+    LPDWORD pdwType,
+    PVOID pvData,
+    LPDWORD pcbData
+);
+
+LSTATUS WINAPI Hooked_RegGetValueA(
+    HKEY hKey,
+    LPCSTR lpSubKey,
+    LPCSTR lpValue,
+    DWORD dwFlags,
+    LPDWORD pdwType,
+    PVOID pvData,
+    LPDWORD pcbData
+);
+
+LSTATUS WINAPI Hooked_RegCloseKey(
+    HKEY hKey
+);
+
 // Hook installation/removal
 bool InstallRegistryHooks();
 bool RemoveRegistryHooks();
@@ -190,3 +238,6 @@ extern RegCreateKeyExW_t Real_RegCreateKeyExW;
 extern RegCreateKeyExA_t Real_RegCreateKeyExA;
 extern RegDeleteValueW_t Real_RegDeleteValueW;
 extern RegDeleteValueA_t Real_RegDeleteValueA;
+extern RegGetValueW_t Real_RegGetValueW;
+extern RegGetValueA_t Real_RegGetValueA;
+extern RegCloseKey_t Real_RegCloseKey;

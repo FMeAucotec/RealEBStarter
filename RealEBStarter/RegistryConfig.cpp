@@ -296,23 +296,87 @@ bool RegistryConfig::HasRedirectedKey(const std::wstring& keyPath) {
     return m_keys.find(normalizedKey) != m_keys.end();
 }
 
-bool RegistryConfig::GetRedirectedValueNames(const std::wstring& keyPath, 
-                                            std::vector<std::wstring>& valueNames) {
-    if (!m_enabled) {
-        return false;
-    }
-    
+bool RegistryConfig::GetRedirectedValueNames(const std::wstring& keyPath, std::vector<std::wstring>& valueNames) {
     std::wstring normalizedKey = NormalizeKeyPath(keyPath);
-    auto keyIt = m_keys.find(normalizedKey);
-    
-    if (keyIt == m_keys.end()) {
+    auto it = m_keys.find(normalizedKey);
+    if (it == m_keys.end()) {
         return false;
     }
     
     valueNames.clear();
-    for (const auto& valuePair : keyIt->second.values) {
-        valueNames.push_back(valuePair.second.valueName);
+    for (const auto& pair : it->second.values) {
+        valueNames.push_back(pair.first);
     }
     
+    return true;
+}
+
+bool RegistryConfig::IsUnderRedirectedKey(const std::wstring& keyPath) {
+    if (!m_enabled) {
+        return false;
+    }
+
+    std::wstring normalizedKey = NormalizeKeyPath(keyPath);
+    for (const auto& pair : m_keys) {
+        const std::wstring& redirectRoot = pair.first;
+        if (normalizedKey == redirectRoot) {
+            return true;
+        }
+        if (normalizedKey.size() > redirectRoot.size() &&
+            normalizedKey.compare(0, redirectRoot.size(), redirectRoot) == 0 &&
+            normalizedKey[redirectRoot.size()] == L'\\') {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool RegistryConfig::EnsureRedirectedKey(const std::wstring& keyPath) {
+    if (!m_enabled) {
+        return false;
+    }
+
+    std::wstring normalizedKey = NormalizeKeyPath(keyPath);
+    auto it = m_keys.find(normalizedKey);
+    if (it != m_keys.end()) {
+        return true;
+    }
+
+    RegistryKey regKey;
+    regKey.keyPath = normalizedKey;
+    m_keys[normalizedKey] = regKey;
+    return true;
+}
+
+bool RegistryConfig::SetRedirectedValue(const std::wstring& keyPath, const std::wstring& valueName,
+                                        DWORD type, const BYTE* data, DWORD dataSize) {
+    if (!m_enabled) {
+        return false;
+    }
+
+    if (data == nullptr && dataSize > 0) {
+        return false;
+    }
+
+    std::wstring normalizedKey = NormalizeKeyPath(keyPath);
+    auto it = m_keys.find(normalizedKey);
+    if (it == m_keys.end()) {
+        RegistryKey regKey;
+        regKey.keyPath = normalizedKey;
+        auto inserted = m_keys.emplace(normalizedKey, std::move(regKey));
+        it = inserted.first;
+    }
+
+    RegistryValue value;
+    value.valueName = valueName;
+    value.type = type;
+    if (dataSize > 0) {
+        value.data.assign(data, data + dataSize);
+    } else {
+        value.data.clear();
+    }
+
+    it->second.values[valueName] = std::move(value);
     return true;
 }

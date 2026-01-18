@@ -26,10 +26,17 @@ RegCreateKeyExW_t Real_RegCreateKeyExW = RegCreateKeyExW;
 RegCreateKeyExA_t Real_RegCreateKeyExA = RegCreateKeyExA;
 RegDeleteValueW_t Real_RegDeleteValueW = RegDeleteValueW;
 RegDeleteValueA_t Real_RegDeleteValueA = RegDeleteValueA;
+RegGetValueW_t Real_RegGetValueW = RegGetValueW;
+RegGetValueA_t Real_RegGetValueA = RegGetValueA;
+RegCloseKey_t Real_RegCloseKey = RegCloseKey;
 
 // Map to track key handles and their paths
 static std::map<HKEY, std::wstring> g_keyHandleMap;
 static std::mutex g_keyHandleMutex;
+
+bool IsFakeKeyHandle(HKEY hKey) {
+    return (reinterpret_cast<uintptr_t>(hKey) & 0xFFFF0000) == 0xFABE0000;
+}
 
 // Helper function to get full registry path from HKEY
 std::wstring GetKeyPath(HKEY hKey, LPCWSTR lpSubKey) {
@@ -176,6 +183,75 @@ LSTATUS WINAPI Hooked_RegQueryValueExA(
     return Hooked_RegQueryValueExW(hKey, wideValueName.c_str(), lpReserved, lpType, lpData, lpcbData);
 }
 
+// Hooked RegGetValueW
+LSTATUS WINAPI Hooked_RegGetValueW(
+    HKEY hKey,
+    LPCWSTR lpSubKey,
+    LPCWSTR lpValue,
+    DWORD dwFlags,
+    LPDWORD pdwType,
+    PVOID pvData,
+    LPDWORD pcbData
+) {
+    std::wstring keyPath = GetKeyPath(hKey, lpSubKey);
+    if (!keyPath.empty() && RegistryConfig::GetInstance().IsUnderRedirectedKey(keyPath)) {
+        std::wstring valueName = lpValue ? lpValue : L"";
+        DWORD type = 0;
+        DWORD dataSize = pcbData ? *pcbData : 0;
+
+        if (RegistryConfig::GetInstance().GetRedirectedValue(keyPath, valueName, &type,
+                                                             static_cast<BYTE*>(pvData), &dataSize)) {
+            if (pdwType) {
+                *pdwType = type;
+            }
+            if (pcbData) {
+                *pcbData = dataSize;
+            }
+
+            if (pvData == nullptr || (pcbData && *pcbData < dataSize)) {
+                if (pcbData) {
+                    *pcbData = dataSize;
+                }
+                return ERROR_MORE_DATA;
+            }
+
+            return ERROR_SUCCESS;
+        }
+
+        return ERROR_FILE_NOT_FOUND;
+    }
+
+    return Real_RegGetValueW(hKey, lpSubKey, lpValue, dwFlags, pdwType, pvData, pcbData);
+}
+
+// Hooked RegGetValueA
+LSTATUS WINAPI Hooked_RegGetValueA(
+    HKEY hKey,
+    LPCSTR lpSubKey,
+    LPCSTR lpValue,
+    DWORD dwFlags,
+    LPDWORD pdwType,
+    PVOID pvData,
+    LPDWORD pcbData
+) {
+    std::wstring wideSubKey = AnsiToWide(lpSubKey);
+    std::wstring wideValue = AnsiToWide(lpValue);
+    return Hooked_RegGetValueW(hKey, wideSubKey.c_str(), wideValue.c_str(), dwFlags, pdwType, pvData, pcbData);
+}
+
+// Hooked RegCloseKey
+LSTATUS WINAPI Hooked_RegCloseKey(
+    HKEY hKey
+) {
+    if (IsFakeKeyHandle(hKey)) {
+        std::lock_guard<std::mutex> lock(g_keyHandleMutex);
+        g_keyHandleMap.erase(hKey);
+        return ERROR_SUCCESS;
+    }
+
+    return Real_RegCloseKey(hKey);
+}
+
 // Hooked RegSetValueExW
 LSTATUS WINAPI Hooked_RegSetValueExW(
     HKEY hKey,
@@ -194,9 +270,14 @@ LSTATUS WINAPI Hooked_RegSetValueExW(
         }
     }
     
-    // If this is a virtual registry key, block writes (read-only)
-    if (!keyPath.empty() && RegistryConfig::GetInstance().HasRedirectedKey(keyPath)) {
-        return ERROR_ACCESS_DENIED;
+    // If this is a virtual registry key, write into the virtual store
+    RegistryConfig& registryConfig = RegistryConfig::GetInstance();
+    if (!keyPath.empty() && registryConfig.IsUnderRedirectedKey(keyPath)) {
+        if (!registryConfig.SetRedirectedValue(keyPath, lpValueName ? lpValueName : L"",
+                                              dwType, lpData, cbData)) {
+            return ERROR_INVALID_PARAMETER;
+        }
+        return ERROR_SUCCESS;
     }
     
     return Real_RegSetValueExW(hKey, lpValueName, Reserved, dwType, lpData, cbData);
@@ -229,12 +310,26 @@ LSTATUS WINAPI Hooked_RegCreateKeyExW(
 ) {
     std::wstring keyPath = GetKeyPath(hKey, lpSubKey);
     
-    // Check if this key is in our virtual registry
-    if (RegistryConfig::GetInstance().HasRedirectedKey(keyPath)) {
-        // Virtual registry is read-only
-        return ERROR_ACCESS_DENIED;
+    RegistryConfig& registryConfig = RegistryConfig::GetInstance();
+
+    // If this key is in the virtual registry, create/return a fake handle and allow writes.
+    const bool existed = registryConfig.IsUnderRedirectedKey(keyPath);
+    if (existed || registryConfig.EnsureRedirectedKey(keyPath)) {
+        HKEY fakeHandle = (HKEY)(0xFABE0000 | (g_keyHandleMap.size() + 1));
+        {
+            std::lock_guard<std::mutex> lock(g_keyHandleMutex);
+            g_keyHandleMap[fakeHandle] = keyPath;
+        }
+
+        if (phkResult) {
+            *phkResult = fakeHandle;
+        }
+        if (lpdwDisposition) {
+            *lpdwDisposition = existed ? REG_OPENED_EXISTING_KEY : REG_CREATED_NEW_KEY;
+        }
+        return ERROR_SUCCESS;
     }
-    
+
     // Not in virtual registry, pass through to real registry
     LSTATUS result = Real_RegCreateKeyExW(hKey, lpSubKey, Reserved, lpClass, dwOptions, 
                                           samDesired, lpSecurityAttributes, phkResult, lpdwDisposition);
@@ -310,6 +405,9 @@ bool InstallRegistryHooks() {
     DetourAttach(&(PVOID&)Real_RegCreateKeyExA, Hooked_RegCreateKeyExA);
     DetourAttach(&(PVOID&)Real_RegDeleteValueW, Hooked_RegDeleteValueW);
     DetourAttach(&(PVOID&)Real_RegDeleteValueA, Hooked_RegDeleteValueA);
+    DetourAttach(&(PVOID&)Real_RegGetValueW, Hooked_RegGetValueW);
+    DetourAttach(&(PVOID&)Real_RegGetValueA, Hooked_RegGetValueA);
+    DetourAttach(&(PVOID&)Real_RegCloseKey, Hooked_RegCloseKey);
     
     LONG error = DetourTransactionCommit();
     return error == NO_ERROR;
@@ -329,6 +427,9 @@ bool RemoveRegistryHooks() {
     DetourDetach(&(PVOID&)Real_RegCreateKeyExA, Hooked_RegCreateKeyExA);
     DetourDetach(&(PVOID&)Real_RegDeleteValueW, Hooked_RegDeleteValueW);
     DetourDetach(&(PVOID&)Real_RegDeleteValueA, Hooked_RegDeleteValueA);
+    DetourDetach(&(PVOID&)Real_RegGetValueW, Hooked_RegGetValueW);
+    DetourDetach(&(PVOID&)Real_RegGetValueA, Hooked_RegGetValueA);
+    DetourDetach(&(PVOID&)Real_RegCloseKey, Hooked_RegCloseKey);
     
     LONG error = DetourTransactionCommit();
     return error == NO_ERROR;

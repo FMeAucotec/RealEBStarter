@@ -68,12 +68,14 @@ void TestRegistry() {
 int wmain() {
     std::wcout << L"NativeTestApp starting..." << std::endl;
 
+	LoadLibraryW(L"D:\\git\\RealEBStarter\\x64\\Debug\\realebstarter.vsl");  
+
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) {
         std::wcerr << L"CoInitializeEx failed: 0x" << std::hex << hr << std::endl;
         return 1;
     }
-
+   // MessageBox(0, L"dsc", L"sdf", 0);
     // Native COM
     INativeTestCom* nativeCom = nullptr;
     hr = CoCreateInstance(CLSID_NativeTestCom, nullptr, CLSCTX_INPROC_SERVER, IID_INativeTestCom,

@@ -32,6 +32,14 @@ public:
     
     // Get all value names for a redirected key
     bool GetRedirectedValueNames(const std::wstring& keyPath, std::vector<std::wstring>& valueNames);
+
+    // Check if a key is under a redirected root
+    bool IsUnderRedirectedKey(const std::wstring& keyPath);
+
+    // Allow write-through into virtual registry
+    bool SetRedirectedValue(const std::wstring& keyPath, const std::wstring& valueName,
+                            DWORD type, const BYTE* data, DWORD dataSize);
+    bool EnsureRedirectedKey(const std::wstring& keyPath);
     
     bool IsEnabled() const { return m_enabled; }
     const std::map<std::wstring, RegistryKey>& GetKeys() const { return m_keys; }

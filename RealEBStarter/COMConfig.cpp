@@ -3,6 +3,24 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <vcclr.h>
+
+// Structure to hold COM DLL information
+struct COMDllMapping {
+    std::wstring clsidString;     // String representation of CLSID
+    CLSID clsid;                  // Parsed CLSID
+    COMActionType actionType;     // Type of action to perform
+    std::wstring dllPath;         // Path to DLL (absolute or relative)
+    std::wstring shellCommand;    // Shell command to execute (for ShellExecute)
+    std::wstring shellParameters; // Command line parameters (for ShellExecute)
+    std::wstring shellVerb;       // Shell verb (open, runas, etc.)
+    HMODULE hModule;              // Loaded module handle
+    bool isLoaded;                // Whether DLL is loaded
+    bool isDotNet = false;
+    bool shellExecuted;           // Whether shell command has been executed
+    gcroot<System::Reflection::Assembly^> managedAssembly = nullptr; // Managed assembly reference (if applicable)
+};
+
 
 COMConfig& COMConfig::GetInstance() {
     static COMConfig instance;
@@ -57,6 +75,8 @@ bool COMConfig::LoadConfiguration(const std::wstring& configFilePath) {
     file.close();
     return true;
 }
+
+
 
 void COMConfig::ParseLine(const std::wstring& line) {
     // Format 1: "CLSID=DLL_PATH"
