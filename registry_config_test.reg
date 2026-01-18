@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+; RealEBStarter test registry config
+; The virtual registry is read-only from RealEBStarter's perspective
+
+[HKEY_CURRENT_USER\Software\RealEBStarter\TestApp]
+"SampleValue"="InjectedValueFromRegistryConfig"
